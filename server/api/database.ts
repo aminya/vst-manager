@@ -158,15 +158,15 @@ export async function syncPluginsFromJson() {
         // Prepare statements for upsert operations
         const insertStmt = db.prepare(`
           INSERT INTO plugins (
-            id, name, vendor, version, path, category, subCategories, 
+            id, name, vendor, version, path, category, subCategories,
             isValid, error, sdkVersion, cardinality, flags, cid, key, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `);
 
         const updateStmt = db.prepare(`
-          UPDATE plugins SET 
-            name = ?, vendor = ?, version = ?, path = ?, category = ?, 
-            subCategories = ?, isValid = ?, error = ?, sdkVersion = ?, 
+          UPDATE plugins SET
+            name = ?, vendor = ?, version = ?, path = ?, category = ?,
+            subCategories = ?, isValid = ?, error = ?, sdkVersion = ?,
             cardinality = ?, flags = ?, cid = ?, key = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `);
@@ -209,7 +209,22 @@ export async function syncPluginsFromJson() {
           const pathForId = Array.isArray(plugin.path) ? plugin.path[0] : plugin.path;
           const id = plugin.id || plugin.cid || pathForId; // Use id as primary key, fallback to cid, then first path
 
-          const subCategories = typeof plugin.subCategories === "string" ? plugin.subCategories : JSON.stringify(plugin.subCategories || []);
+          // Parse category and subCategories
+          let subCategoriesArray: string[] = [];
+          if ('subCategories' in plugin && plugin.subCategories) {
+            subCategoriesArray = Array.isArray(plugin.subCategories) ? plugin.subCategories : [plugin.subCategories];
+          } else if ('category' in plugin && plugin.category) {
+            subCategoriesArray = [plugin.category];
+          }
+          const subCategories = JSON.stringify(subCategoriesArray);
+
+          // Parse vendor/manufacturerName
+          let vendor: string | null = null;
+          if ('vendor' in plugin && typeof plugin.vendor === 'string' && plugin.vendor !== '') {
+            vendor = plugin.vendor;
+          } else if ('manufacturerName' in plugin && typeof plugin.manufacturerName === 'string' && plugin.manufacturerName !== '') {
+            vendor = plugin.manufacturerName;
+          }
 
           // Store path as JSON string if it's an array, otherwise as single string for backwards compatibility
           const pathToStore = Array.isArray(plugin.path) ? JSON.stringify(plugin.path) : plugin.path;
@@ -232,7 +247,7 @@ export async function syncPluginsFromJson() {
 
             if (row) {
               // Plugin exists - update it
-              updateStmt.run([pluginName, plugin.vendor, plugin.version, pathToStore, plugin.category, subCategories, plugin.isValid !== undefined ? (plugin.isValid ? 1 : 0) : 1, plugin.error || null, plugin.sdkVersion, plugin.cardinality, plugin.flags, plugin.cid, plugin.key || null, id], (updateErr) => {
+              updateStmt.run([pluginName, vendor, plugin.version, pathToStore, plugin.category, subCategories, plugin.isValid !== undefined ? (plugin.isValid ? 1 : 0) : 1, plugin.error || null, plugin.sdkVersion, plugin.cardinality, plugin.flags, plugin.cid, plugin.key || null, id], (updateErr) => {
                 if (updateErr) {
                   reject(updateErr);
                   return;
@@ -243,7 +258,7 @@ export async function syncPluginsFromJson() {
               });
             } else {
               // Plugin doesn't exist - insert it
-              insertStmt.run([id, pluginName, plugin.vendor, plugin.version, pathToStore, plugin.category, subCategories, plugin.isValid !== undefined ? (plugin.isValid ? 1 : 0) : 1, plugin.error || null, plugin.sdkVersion, plugin.cardinality, plugin.flags, plugin.cid, plugin.key || null], (insertErr) => {
+              insertStmt.run([id, pluginName, vendor, plugin.version, pathToStore, plugin.category, subCategories, plugin.isValid !== undefined ? (plugin.isValid ? 1 : 0) : 1, plugin.error || null, plugin.sdkVersion, plugin.cardinality, plugin.flags, plugin.cid, plugin.key || null], (insertErr) => {
                 if (insertErr) {
                   reject(insertErr);
                   return;
